@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
             // Generate title and description in parallel
             const [titleMessage, descMessage] = await Promise.all([
             anthropic.messages.create({
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-haiku-4-5-20251001",
               max_tokens: 200,
               system: customTitlePrompt ? "You are a helpful AI assistant." : `You are an expert in e-commerce SEO. Always respond in ${targetLang}.`,
               messages: [
@@ -64,7 +64,7 @@ Respond only with the new title in ${targetLang}, without quotes or explanations
             }),
             // Generate description based on original title
             anthropic.messages.create({
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-haiku-4-5-20251001",
               max_tokens: 500,
               system: customDescPrompt ? "You are a helpful AI assistant." : `You are an expert in e-commerce SEO copywriting. Always respond in ${targetLang}.`,
               messages: [
@@ -112,7 +112,7 @@ Precision test: By hiding the main keyword, the reader must understand precisely
           } else if (mode === "title") {
             // Generate only title
             const titleMessage = await anthropic.messages.create({
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-haiku-4-5-20251001",
               max_tokens: 200,
               system: customTitlePrompt ? "You are a helpful AI assistant." : `You are an expert in e-commerce SEO. Always respond in ${targetLang}.`,
               messages: [
@@ -135,7 +135,7 @@ Respond only with the new title in ${targetLang}, without quotes or explanations
           } else if (mode === "description") {
             // Generate only description
             const descMessage = await anthropic.messages.create({
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-haiku-4-5-20251001",
               max_tokens: 500,
               system: customDescPrompt ? "You are a helpful AI assistant." : `You are an expert in e-commerce SEO copywriting. Always respond in ${targetLang}.`,
               messages: [

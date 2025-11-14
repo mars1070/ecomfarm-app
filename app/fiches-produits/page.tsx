@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, Loader2, Download, Pause, Play, Sparkles } from "lucide-react";
+import { Upload, Loader2, Download, Pause, Play, Sparkles, FileText, ShoppingBag } from "lucide-react";
 import Papa from "papaparse";
+import ShopifyStoreSelector from '@/components/ShopifyStoreSelector';
+import PublishModeSelector from '@/components/PublishModeSelector';
+import type { ShopifyStore, PublishMode } from '@/types/shopify';
 
 interface ProductRow {
   [key: string]: string;
@@ -38,6 +41,12 @@ export default function FichesProduits() {
   const pauseRef = useRef(false);
   const BATCH_SIZE = 5; // Process 5 products at a time
 
+  // Shopify states
+  const [selectedStore, setSelectedStore] = useState<ShopifyStore | null>(null);
+  const [publishMode, setPublishMode] = useState<PublishMode>('draft');
+  const [scheduledDate, setScheduledDate] = useState<string>("");
+  const [isPublishing, setIsPublishing] = useState(false);
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -46,12 +55,13 @@ export default function FichesProduits() {
       header: true,
       complete: (results) => {
         const data = results.data as ProductRow[];
-        setCsvData(data.filter(row => row.Title)); // Filter out empty rows
+        // Keep ALL rows including empty ones to preserve Shopify structure
+        setCsvData(data);
         
-        // Initialize processed products
-        const products: ProcessedProduct[] = data
-          .filter(row => row.Title)
-          .map((row, index) => {
+        // Initialize processed products - only for rows with Title
+        const products: ProcessedProduct[] = [];
+        data.forEach((row, index) => {
+          if (row.Title && row.Title.trim()) {
             // Extract first image URL from "Image Src" column (Shopify CSV format)
             let imageUrl = "";
             if (row["Image Src"]) {
@@ -60,15 +70,16 @@ export default function FichesProduits() {
               imageUrl = urls[0].trim();
             }
             
-            return {
+            products.push({
               originalTitle: row.Title,
               imageUrl: imageUrl || undefined,
               newTitle: "",
               newDescription: "",
               status: "pending",
-              rowIndex: index,
-            };
-          });
+              rowIndex: index, // Keep original index to match csvData
+            });
+          }
+        });
         setProcessedProducts(products);
       },
       error: (error) => {
@@ -373,23 +384,137 @@ export default function FichesProduits() {
     document.body.removeChild(link);
   };
 
+  const publishToShopify = async (product: ProcessedProduct) => {
+    if (!selectedStore) {
+      alert("⚠️ Veuillez sélectionner un store Shopify");
+      return;
+    }
+
+    if (!product.newTitle || !product.newDescription) {
+      alert("⚠️ Le produit n'a pas de titre ou description à publier");
+      return;
+    }
+
+    setIsPublishing(true);
+
+    try {
+      const response = await fetch("/api/shopify/publish-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store: selectedStore,
+          product: {
+            title: product.newTitle,
+            body_html: product.newDescription,
+            vendor: productNiche || "EcomFarm",
+            product_type: productNiche,
+            images: product.imageUrl ? [{ src: product.imageUrl }] : [],
+          },
+          publishMode,
+          scheduledDate: publishMode === 'scheduled' ? scheduledDate : undefined,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`✅ Produit "${product.newTitle}" publié sur Shopify !`);
+      } else {
+        alert(`❌ Erreur: ${result.message}`);
+      }
+    } catch (error: any) {
+      alert(`❌ Erreur de publication: ${error.message}`);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const publishAllToShopify = async () => {
+    if (!selectedStore) {
+      alert("⚠️ Veuillez sélectionner un store Shopify");
+      return;
+    }
+
+    const completedProducts = processedProducts.filter(p => p.status === "completed" && p.newTitle && p.newDescription);
+    
+    if (completedProducts.length === 0) {
+      alert("⚠️ Aucun produit complété à publier");
+      return;
+    }
+
+    if (!confirm(`Publier ${completedProducts.length} produit(s) sur Shopify ?`)) {
+      return;
+    }
+
+    setIsPublishing(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const product of completedProducts) {
+      try {
+        const response = await fetch("/api/shopify/publish-product", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            store: selectedStore,
+            product: {
+              title: product.newTitle,
+              body_html: product.newDescription,
+              vendor: productNiche || "EcomFarm",
+              product_type: productNiche,
+              images: product.imageUrl ? [{ src: product.imageUrl }] : [],
+            },
+            publishMode,
+            scheduledDate: publishMode === 'scheduled' ? scheduledDate : undefined,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+
+        // Petit délai entre chaque publication
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error: any) {
+        errorCount++;
+      }
+    }
+
+    setIsPublishing(false);
+    alert(`Publication terminée !\n✅ ${successCount} réussi(s)\n❌ ${errorCount} erreur(s)`);
+  };
+
   // Calculate statistics
   const completedCount = processedProducts.filter(p => p.status === "completed").length;
   const totalCount = processedProducts.length;
   const progressPercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  // Claude Haiku 4.5 pricing: $1/M input + $5/M output
+  // Average per product: ~150 input tokens + ~95 output tokens = $0.000625
+  // With Gemini image: +$0.000075 = $0.0007 total
   const estimatedCost = useImageForTitle 
-    ? (totalCount * 0.00048).toFixed(2) 
-    : (totalCount * 0.0005).toFixed(2);
+    ? (totalCount * 0.0007).toFixed(2) 
+    : (totalCount * 0.000625).toFixed(2);
 
   return (
     <div className="p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Fiches Produits</h1>
-          <p className="mt-2 text-gray-600">
-            Optimisez vos titres et descriptions produits avec l'IA
-          </p>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
+              <FileText className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Fiches Produits</h1>
+              <p className="text-gray-600">
+                Optimisez vos titres et descriptions produits avec l'IA
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Error Message Banner */}
@@ -727,6 +852,67 @@ export default function FichesProduits() {
             </div>
           </div>
         </div>
+
+        {/* Shopify Publication Section */}
+        {completedCount > 0 && (
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-2xl p-6 mb-6 shadow-lg">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <ShoppingBag className="w-6 h-6 text-green-600" />
+              Publication sur Shopify
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              {/* Store Selector */}
+              <ShopifyStoreSelector 
+                onStoreSelect={setSelectedStore}
+                selectedStoreId={selectedStore?.id}
+              />
+
+              {/* Publish Mode Selector */}
+              {selectedStore && (
+                <div>
+                  <PublishModeSelector 
+                    onModeChange={(mode, date) => {
+                      setPublishMode(mode);
+                      if (date) setScheduledDate(date);
+                    }}
+                    defaultMode={publishMode}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Publish All Button */}
+            {selectedStore && (
+              <>
+                <div className="flex gap-3">
+                  <button
+                    onClick={publishAllToShopify}
+                    disabled={isPublishing || completedCount === 0}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPublishing ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Publication en cours...
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingBag className="w-5 h-5" />
+                        Publier {completedCount} produit{completedCount > 1 ? 's' : ''} sur Shopify
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-3 text-xs text-gray-600 bg-white rounded-lg p-3 border border-gray-200">
+                  💡 <strong>Info :</strong> Les produits seront publiés en mode <strong>{publishMode === 'draft' ? 'Brouillon' : publishMode === 'scheduled' ? 'Programmé' : 'Actif'}</strong>
+                  {publishMode === 'scheduled' && scheduledDate && ` le ${new Date(scheduledDate).toLocaleDateString('fr-FR')}`}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Products Table */}
         {processedProducts.length > 0 && (

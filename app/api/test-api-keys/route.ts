@@ -5,14 +5,16 @@ import { getClaudeErrorMessage, getGeminiErrorMessage } from "@/lib/error-messag
 
 export async function POST(request: NextRequest) {
   try {
-    const { claudeKey, geminiKey } = await request.json();
+    const { claudeKey, geminiKey, perplexityKey } = await request.json();
 
     const results: {
       claude: { valid: boolean; error?: string };
       gemini: { valid: boolean; error?: string };
+      perplexity: { valid: boolean; error?: string };
     } = {
       claude: { valid: false },
-      gemini: { valid: false }
+      gemini: { valid: false },
+      perplexity: { valid: false }
     };
 
     // Test Claude API key
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
         
         // Make a minimal test request
         await anthropic.messages.create({
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 10,
           messages: [
             {
@@ -54,6 +56,40 @@ export async function POST(request: NextRequest) {
       } catch (error: any) {
         results.gemini.valid = false;
         results.gemini.error = getGeminiErrorMessage(error);
+      }
+    }
+
+    // Test Perplexity API key
+    if (perplexityKey) {
+      try {
+        const response = await fetch("https://api.perplexity.ai/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${perplexityKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "sonar",  // Updated from llama-3.1-sonar-small-128k-online (Nov 2025)
+            messages: [
+              {
+                role: "user",
+                content: "Hi"
+              }
+            ],
+            max_tokens: 10,
+          }),
+        });
+
+        if (response.ok) {
+          results.perplexity.valid = true;
+        } else {
+          const errorData = await response.json();
+          results.perplexity.valid = false;
+          results.perplexity.error = errorData.error?.message || "Clé API invalide";
+        }
+      } catch (error: any) {
+        results.perplexity.valid = false;
+        results.perplexity.error = error.message || "Erreur de connexion à Perplexity";
       }
     }
 

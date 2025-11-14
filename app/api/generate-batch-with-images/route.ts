@@ -154,7 +154,7 @@ Respond ONLY with the unique, specific product title in ${targetLang}, without q
             // Use Claude if not using image or if Gemini failed
             if (!newTitle && anthropic) {
               const titleMessage = await anthropic.messages.create({
-                model: "claude-3-5-haiku-20241022",
+                model: "claude-haiku-4-5-20251001",
                 max_tokens: 200,
                 system: `You are an expert in e-commerce SEO. Always respond in ${targetLang}.`,
                 messages: [
@@ -178,7 +178,7 @@ Respond only with the new title in ${targetLang}, without quotes or explanations
           // Generate description with Claude
           if ((mode === "both" || mode === "description") && anthropic) {
             const descMessage = await anthropic.messages.create({
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-haiku-4-5-20251001",
               max_tokens: 500,
               system: `You are an expert in e-commerce SEO copywriting. Always respond in ${targetLang}.`,
               messages: [

@@ -1,0 +1,1134 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { FileText, Loader2, Download, Search, Globe, TrendingUp, CheckCircle, AlertCircle, Pause, Play, ChevronDown, ChevronUp, Copy, Clock } from "lucide-react";
+
+interface Article {
+  keyword: string;
+  country: string;
+  serpAnalysis: string;
+  content: string;
+  slug?: string;
+  fullUrl?: string;
+  linkCount?: number;
+  status: "pending" | "analyzing" | "writing" | "completed" | "error";
+  costs?: {
+    serpCost: number;
+    writingCost: number;
+    totalCost: number;
+  };
+  perplexityModel?: string;
+  blogHandle?: string;
+  groupId?: string;
+}
+
+interface ArticleGroup {
+  id: string;
+  name: string;
+  blogHandle: string;
+  articles: Article[];
+}
+
+export default function ArticlesBlog() {
+  const [keywords, setKeywords] = useState("");
+  const [country, setCountry] = useState("fr");
+  const [language, setLanguage] = useState("fr");
+  const [perplexityModel, setPerplexityModel] = useState("sonar");
+  const [siteUrl, setSiteUrl] = useState("");
+  const [blogHandle, setBlogHandle] = useState("");
+  const [groups, setGroups] = useState<ArticleGroup[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [currentStep, setCurrentStep] = useState("");
+  const [totalCosts, setTotalCosts] = useState({ serp: 0, writing: 0, total: 0 });
+  const [logs, setLogs] = useState<string[]>([]);
+  const [liveTimer, setLiveTimer] = useState<number>(0);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
+  const [expandedArticles, setExpandedArticles] = useState<{[key: number]: {serp: boolean, content: boolean}}>({});
+  const pauseRef = useRef(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [timerInterval]);
+
+  // Toggle accordion
+  const toggleAccordion = (index: number, type: 'serp' | 'content') => {
+    setExpandedArticles(prev => ({
+      ...prev,
+      [index]: {
+        ...prev[index],
+        [type]: !prev[index]?.[type]
+      }
+    }));
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      alert(`✅ ${label} copié dans le presse-papier !`);
+    } catch (err) {
+      alert(`❌ Erreur lors de la copie`);
+    }
+  };
+
+  // Load site URL and blog handle from localStorage
+  useEffect(() => {
+    const savedUrl = localStorage.getItem("siteUrl");
+    const savedBlogHandle = localStorage.getItem("blogHandle");
+    if (savedUrl) {
+      setSiteUrl(savedUrl);
+    }
+    if (savedBlogHandle) {
+      setBlogHandle(savedBlogHandle);
+    }
+  }, []);
+
+  // Save site URL to localStorage when it changes
+  useEffect(() => {
+    if (siteUrl) {
+      localStorage.setItem("siteUrl", siteUrl);
+    }
+  }, [siteUrl]);
+
+  // Save blog handle to localStorage when it changes
+  useEffect(() => {
+    if (blogHandle) {
+      localStorage.setItem("blogHandle", blogHandle);
+    }
+  }, [blogHandle]);
+
+  const togglePause = () => {
+    setIsPaused(prev => !prev);
+    pauseRef.current = !pauseRef.current;
+  };
+
+  const addArticleGroup = () => {
+    if (!keywords.trim() || !blogHandle.trim()) return;
+    
+    const lines = keywords
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+    
+    if (lines.length === 0) return;
+
+    // Validate blog handle format
+    if (!/^[a-z0-9-]+$/.test(blogHandle)) {
+      setErrorMessage("⚠️ Le nom du blog doit contenir uniquement des lettres minuscules, chiffres et tirets");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    const groupId = Date.now().toString();
+    const newArticles: Article[] = lines.map(keyword => ({
+      keyword,
+      country,
+      serpAnalysis: "",
+      content: "",
+      status: "pending",
+      perplexityModel,
+      costs: { serpCost: 0, writingCost: 0, totalCost: 0 },
+      blogHandle,
+      groupId,
+    }));
+
+    const newGroup: ArticleGroup = {
+      id: groupId,
+      name: `${blogHandle} (${lines.length} articles)`,
+      blogHandle,
+      articles: newArticles,
+    };
+
+    setGroups([...groups, newGroup]);
+    setKeywords("");
+    // Don't clear blogHandle to allow adding more groups with same blog
+  };
+
+  const removeGroup = (groupId: string) => {
+    setGroups(groups.filter(g => g.id !== groupId));
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  };
+
+  // Get all articles from all groups in order
+  const allArticles = groups.flatMap(g => g.articles);
+
+  const generateAllArticles = async () => {
+    const claudeApiKey = localStorage.getItem("anthropic_api_key");
+    const perplexityApiKey = localStorage.getItem("perplexity_api_key");
+    
+    if (!claudeApiKey) {
+      setErrorMessage("⚠️ Veuillez configurer votre clé API Claude dans les Paramètres");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    if (!perplexityApiKey) {
+      setErrorMessage("⚠️ Veuillez configurer votre clé API Perplexity pour la recherche SERP");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    if (!siteUrl || !siteUrl.trim()) {
+      setErrorMessage("⚠️ Veuillez entrer l'URL de votre site pour le maillage interne");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(siteUrl);
+    } catch {
+      setErrorMessage("⚠️ L'URL du site n'est pas valide (ex: https://votre-site.com)");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    if (groups.length === 0) {
+      setErrorMessage("⚠️ Veuillez ajouter au moins un groupe d'articles");
+      setTimeout(() => setErrorMessage(""), 5000);
+      return;
+    }
+
+    setIsProcessing(true);
+    setErrorMessage("");
+    setLogs([`🚀 Démarrage de la génération de ${allArticles.length} article(s) dans ${groups.length} groupe(s)...`, '']);
+
+    for (let i = 0; i < allArticles.length; i++) {
+      const article = allArticles[i];
+      
+      // Check for pause before processing each article
+      while (pauseRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      try {
+        // Step 1: SERP Analysis
+        const stepMsg = `📊 [${i + 1}/${allArticles.length}] Analyse SERP pour "${article.keyword}" (Blog: ${article.blogHandle})...`;
+        setCurrentStep(stepMsg);
+        setLogs(prev => [...prev, stepMsg]);
+        
+        // Update article status in groups
+        setGroups(prev => prev.map(g => ({
+          ...g,
+          articles: g.articles.map(a => 
+            a.groupId === article.groupId && a.keyword === article.keyword
+              ? { ...a, status: "analyzing" as const }
+              : a
+          )
+        })));
+
+        const serpStartTime = Date.now();
+
+        const serpResponse = await fetch("/api/analyze-serp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            keyword: article.keyword,
+            country: article.country,
+            perplexityApiKey,
+            claudeApiKey,
+            language,
+            perplexityModel: article.perplexityModel || perplexityModel,
+          }),
+        });
+
+        if (!serpResponse.ok) {
+          const errorData = await serpResponse.json();
+          console.error("SERP API Error:", errorData);
+          throw new Error(errorData.error || "Erreur lors de l'analyse SERP");
+        }
+
+        const { analysis, costs: serpCosts } = await serpResponse.json();
+        const serpEndTime = Date.now();
+        const serpDuration = ((serpEndTime - serpStartTime) / 1000).toFixed(1);
+        const serpLog = `✅ Analyse SERP terminée en ${serpDuration}s - Coût: $${serpCosts?.total?.toFixed(4) || '0.0000'}`;
+        setLogs(prev => [...prev, serpLog]);
+
+        // Update article with SERP analysis
+        setGroups(prev => prev.map(g => ({
+          ...g,
+          articles: g.articles.map(a => 
+            a.groupId === article.groupId && a.keyword === article.keyword
+              ? { ...a, serpAnalysis: analysis }
+              : a
+          )
+        })));
+
+        // Step 2: Article Writing
+        const writeMsg = `✍️ [${i + 1}/${allArticles.length}] Rédaction de l'article "${article.keyword}" (Blog: ${article.blogHandle})...`;
+        setCurrentStep(writeMsg);
+        setLogs(prev => [...prev, writeMsg]);
+        
+        // Update article status to writing
+        setGroups(prev => prev.map(g => ({
+          ...g,
+          articles: g.articles.map(a => 
+            a.groupId === article.groupId && a.keyword === article.keyword
+              ? { ...a, status: "writing" as const }
+              : a
+          )
+        })));
+
+        const writeStartTime = Date.now();
+        
+        // Start live timer
+        setLiveTimer(0);
+        const interval = setInterval(() => {
+          setLiveTimer(prev => prev + 1);
+        }, 1000);
+        setTimerInterval(interval);
+        
+        setLogs(prev => [...prev, `⏱️  Timer démarré pour la rédaction...`]);
+
+        // Prepare internal linking data (GLOBAL across all groups)
+        const isFirst = i === 0;
+        const isLast = i === allArticles.length - 1;
+        const previousArticle = i > 0 ? allArticles[i - 1] : null;
+        const nextArticle = i < allArticles.length - 1 ? allArticles[i + 1] : null;
+
+        const writeResponse = await fetch("/api/write-article", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            keyword: article.keyword,
+            serpAnalysis: analysis,
+            claudeApiKey,
+            language,
+            siteUrl,
+            blogHandle: article.blogHandle, // Use article's specific blog handle
+            allArticles: allArticles.map(a => ({ keyword: a.keyword, blogHandle: a.blogHandle })),
+            position: isFirst ? "first" : isLast ? "last" : "middle",
+            previousArticle: previousArticle ? { keyword: previousArticle.keyword, blogHandle: previousArticle.blogHandle } : null,
+            nextArticle: nextArticle ? { keyword: nextArticle.keyword, blogHandle: nextArticle.blogHandle } : null,
+          }),
+        });
+
+        if (!writeResponse.ok) {
+          const errorData = await writeResponse.json();
+          console.error("Writing API Error:", errorData);
+          throw new Error(errorData.error || "Erreur lors de la rédaction");
+        }
+
+        const { content, slug, fullUrl, linkCount, costs: writingCosts, wordCount, h2Count } = await writeResponse.json();
+        const writeEndTime = Date.now();
+        const writeDuration = ((writeEndTime - writeStartTime) / 1000).toFixed(1);
+        
+        // Stop timer
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          setTimerInterval(null);
+        }
+        
+        // Detailed logs
+        const writeLog = `✅ Rédaction terminée en ${writeDuration}s`;
+        const detailsLog = `   📝 ${wordCount || content.split(' ').length} mots | 📑 ${h2Count || 0} sections H2 | 🔗 ${linkCount || 0} liens internes`;
+        const costLog = `   💰 Coût rédaction: $${writingCosts?.total?.toFixed(4) || '0.0000'} (Input: ${writingCosts?.input || 0} tokens, Output: ${writingCosts?.output || 0} tokens)`;
+        setLogs(prev => [...prev, writeLog, detailsLog, costLog]);
+
+        const articleCosts = {
+          serpCost: serpCosts?.total || 0,
+          writingCost: writingCosts?.total || 0,
+          totalCost: (serpCosts?.total || 0) + (writingCosts?.total || 0),
+        };
+
+        const totalLog = `💰 Article "${article.keyword}" terminé - Coût total: $${articleCosts.totalCost.toFixed(4)}`;
+        const summaryLog = `   ⚡ Temps total: ${((writeEndTime - serpStartTime) / 1000).toFixed(1)}s (SERP: ${serpDuration}s + Rédaction: ${writeDuration}s)`;
+        setLogs(prev => [...prev, totalLog, summaryLog, '']);
+
+        // Update article with completed content
+        setGroups(prev => prev.map(g => ({
+          ...g,
+          articles: g.articles.map(a => 
+            a.groupId === article.groupId && a.keyword === article.keyword
+              ? { 
+                  ...a, 
+                  content,
+                  slug,
+                  fullUrl,
+                  linkCount,
+                  status: "completed" as const,
+                  costs: articleCosts,
+                }
+              : a
+          )
+        })));
+
+        // Update total costs
+        setTotalCosts(prev => ({
+          serp: prev.serp + articleCosts.serpCost,
+          writing: prev.writing + articleCosts.writingCost,
+          total: prev.total + articleCosts.totalCost,
+        }));
+
+      } catch (error: any) {
+        console.error("Error generating article:", error);
+        
+        // Update article status to error
+        setGroups(prev => prev.map(g => ({
+          ...g,
+          articles: g.articles.map(a => 
+            a.groupId === article.groupId && a.keyword === article.keyword
+              ? { ...a, status: "error" as const }
+              : a
+          )
+        })));
+        
+        const errorLog = `❌ Erreur pour "${article.keyword}": ${error.message}`;
+        setLogs(prev => [...prev, errorLog, '']);
+        setErrorMessage(`⚠️ Erreur pour "${article.keyword}": ${error.message}`);
+      }
+    }
+
+    const completedCount = allArticles.filter(a => a.status === "completed").length;
+    const finalLog = `✅ Génération terminée ! ${completedCount}/${allArticles.length} article(s) réussi(s)`;
+    setLogs(prev => [...prev, '', finalLog]);
+    setIsProcessing(false);
+    setCurrentStep("");
+  };
+
+  const downloadArticles = () => {
+    let output = "# ARTICLES DE BLOG SEO\n";
+    output += `# Date: ${new Date().toLocaleDateString()}\n`;
+    output += `# Nombre d'articles: ${articles.length}\n\n`;
+    output += "=".repeat(80) + "\n\n";
+
+    articles.forEach((article, index) => {
+      output += `\nARTICLE ${index + 1}: ${article.keyword}\n`;
+      output += `Pays: ${article.country}\n`;
+      output += `Statut: ${article.status}\n\n`;
+      
+      if (article.serpAnalysis) {
+        output += "--- ANALYSE SERP ---\n\n";
+        output += article.serpAnalysis;
+        output += "\n\n" + "=".repeat(80) + "\n\n";
+      }
+      
+      if (article.content) {
+        output += "--- CONTENU ARTICLE (HTML) ---\n\n";
+        output += article.content;
+        output += "\n\n" + "=".repeat(80) + "\n\n";
+      }
+    });
+
+    const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `articles-blog-${Date.now()}.txt`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const completedCount = articles.filter(a => a.status === "completed").length;
+  const progressPercentage = articles.length > 0 
+    ? Math.round((completedCount / articles.length) * 100) 
+    : 0;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
+              <FileText className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Articles de Blog SEO</h1>
+              <p className="text-gray-600">
+                Recherche SERP + Rédaction optimisée
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Error Message */}
+        {errorMessage && (
+          <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+            <div className="flex items-start">
+              <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 mr-3" />
+              <p className="text-sm font-medium text-red-800">{errorMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Current Step */}
+        {isProcessing && currentStep && (
+          <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
+            <div className="flex items-center">
+              <Loader2 className="h-5 w-5 text-blue-500 animate-spin mr-3" />
+              <p className="text-sm font-medium text-blue-900">{currentStep}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Statistics */}
+        {articles.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Articles</div>
+              <div className="text-2xl font-bold text-gray-900">{articles.length}</div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Complétés</div>
+              <div className="text-2xl font-bold text-green-600">{completedCount}</div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Progression</div>
+              <div className="text-2xl font-bold text-blue-600">{progressPercentage}%</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg shadow-sm border-2 border-purple-300 p-4">
+              <div className="text-sm text-purple-700 font-semibold mb-1">💰 Coût Total</div>
+              <div className="text-2xl font-bold text-purple-600">${totalCosts.total.toFixed(4)}</div>
+              <div className="text-xs text-purple-600 mt-1">
+                SERP: ${totalCosts.serp.toFixed(4)} | Rédaction: ${totalCosts.writing.toFixed(4)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Configuration Panel */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Search className="w-5 h-5 text-blue-500" />
+            Configuration
+          </h2>
+
+          {/* Perplexity Model Selection */}
+          <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border-2 border-indigo-200">
+            <label className="block text-sm font-semibold text-indigo-900 mb-3">
+              🔍 Modèle Perplexity (Recherche SERP)
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                onClick={() => setPerplexityModel("sonar")}
+                disabled={isProcessing}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  perplexityModel === "sonar"
+                    ? "border-indigo-500 bg-indigo-100 shadow-md"
+                    : "border-gray-300 bg-white hover:border-indigo-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-indigo-900">Sonar (Standard)</span>
+                  {perplexityModel === "sonar" && (
+                    <CheckCircle className="w-5 h-5 text-indigo-600" />
+                  )}
+                </div>
+                <div className="text-xs text-indigo-700 space-y-1">
+                  <div>📊 Modèle: llama-3.1-sonar-large-128k-online</div>
+                  <div className="font-semibold text-green-700">💰 $1 / 1M tokens input</div>
+                  <div className="font-semibold text-green-700">💰 $1 / 1M tokens output</div>
+                  <div className="text-indigo-600 mt-2">~$0.003-0.005 par recherche</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setPerplexityModel("sonar-pro")}
+                disabled={isProcessing}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  perplexityModel === "sonar-pro"
+                    ? "border-purple-500 bg-purple-100 shadow-md"
+                    : "border-gray-300 bg-white hover:border-purple-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-purple-900">Sonar Pro ⭐</span>
+                  {perplexityModel === "sonar-pro" && (
+                    <CheckCircle className="w-5 h-5 text-purple-600" />
+                  )}
+                </div>
+                <div className="text-xs text-purple-700 space-y-1">
+                  <div>📊 Modèle: sonar-pro</div>
+                  <div className="font-semibold text-orange-700">💰 $3 / 1M tokens input</div>
+                  <div className="font-semibold text-orange-700">💰 $15 / 1M tokens output</div>
+                  <div className="text-purple-600 mt-2">~$0.010-0.020 par recherche</div>
+                  <div className="text-purple-800 font-semibold mt-1">✨ Meilleure qualité</div>
+                </div>
+              </button>
+            </div>
+            <div className="mt-3 text-xs text-indigo-700 bg-white rounded p-2 border border-indigo-200">
+              💡 <strong>Test recommandé:</strong> Générez 1 article avec chaque modèle pour comparer qualité vs coût
+            </div>
+          </div>
+
+          {/* Country and Language */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                🌍 Pays cible (SERP)
+              </label>
+              <select
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                disabled={isProcessing}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+              >
+                <option value="fr">France</option>
+                <option value="us">États-Unis</option>
+                <option value="uk">Royaume-Uni</option>
+                <option value="ca">Canada</option>
+                <option value="de">Allemagne</option>
+                <option value="es">Espagne</option>
+                <option value="it">Italie</option>
+                <option value="be">Belgique</option>
+                <option value="ch">Suisse</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                🗣️ Langue de rédaction
+              </label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={isProcessing}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+              >
+                <option value="fr">Français</option>
+                <option value="en">Anglais</option>
+                <option value="es">Espagnol</option>
+                <option value="de">Allemand</option>
+                <option value="it">Italien</option>
+                <option value="pt">Portugais</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Site URL and Blog Handle for Internal Linking */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                🔗 URL de votre site <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="url"
+                value={siteUrl}
+                onChange={(e) => setSiteUrl(e.target.value)}
+                placeholder="https://votre-site.com"
+                disabled={isProcessing}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                📝 Nom du blog Shopify <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={blogHandle}
+                onChange={(e) => setBlogHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                placeholder="grillz-guide"
+                disabled={isProcessing}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+              />
+            </div>
+          </div>
+          <div className="mb-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-xs text-blue-800">
+              💡 <strong>Structure URL Shopify :</strong> {siteUrl || "https://votre-site.com"}/blogs/<strong>{blogHandle || "nom-du-blog"}</strong>/slug-article
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              Exemple : {siteUrl || "https://votre-site.com"}/blogs/{blogHandle || "grillz-guide"}/can-you-eat-with-grillz
+            </p>
+          </div>
+
+          {/* Keywords Input */}
+          <div className="border-t pt-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-500" />
+              Mots-clés / Sujets
+            </h2>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                🎯 Liste des mots-clés <span className="text-gray-500 font-normal">(un par ligne)</span>
+              </label>
+              <textarea
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder={"Entrez vos mots-clés :\n\nComment choisir des grillz\nEntretien des grillz en or\nGrillz personnalisés vs standard"}
+                disabled={isProcessing}
+                rows={8}
+                className="w-full px-4 py-3 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-blue-50/50"
+              />
+              <div className="flex items-center justify-between mt-3">
+                <p className="text-sm text-gray-600">
+                  💡 {keywords.split('\n').filter(l => l.trim()).length} mot(s)-clé(s)
+                </p>
+                <button
+                  onClick={addArticles}
+                  disabled={isProcessing || !keywords.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-md hover:shadow-lg"
+                >
+                  <FileText className="w-5 h-5" />
+                  Ajouter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Real-time Logs */}
+        {logs.length > 0 && (
+          <div className="mb-6 bg-gray-900 rounded-lg p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  📊 Logs en Temps Réel
+                </h2>
+                {timerInterval && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-600 rounded-lg text-white text-sm font-mono">
+                    <Clock className="w-4 h-4 animate-pulse" />
+                    {Math.floor(liveTimer / 60)}:{(liveTimer % 60).toString().padStart(2, '0')}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setLogs([])}
+                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
+              >
+                Effacer
+              </button>
+            </div>
+            <div className="bg-black rounded p-4 max-h-64 overflow-y-auto font-mono text-sm">
+              {logs.map((log, idx) => (
+                <div
+                  key={idx}
+                  className={`${
+                    log.includes('📊') ? 'text-blue-400' :
+                    log.includes('✍️') ? 'text-purple-400' :
+                    log.includes('✅') ? 'text-green-400' :
+                    log.includes('💰') ? 'text-yellow-400' :
+                    log.includes('❌') ? 'text-red-400' :
+                    log.includes('⏱️') ? 'text-cyan-400' :
+                    log.includes('   ') ? 'text-gray-500' :
+                    'text-gray-400'
+                  } ${log === '' ? 'h-2' : ''}`}
+                >
+                  {log}
+                </div>
+              ))}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        )}
+
+        {/* Articles List */}
+        {articles.length > 0 && (
+          <div className="space-y-4 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <FileText className="w-6 h-6 text-blue-500" />
+                Articles ({articles.length})
+              </h2>
+              <div className="flex gap-3">
+                {!isProcessing && (
+                  <button
+                    onClick={generateAllArticles}
+                    className="flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg font-medium text-base"
+                  >
+                    <Search className="w-5 h-5" />
+                    Générer Tous les Articles
+                  </button>
+                )}
+                {completedCount > 0 && (
+                  <button
+                    onClick={downloadArticles}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg font-medium"
+                  >
+                    <Download className="w-4 h-4" />
+                    Télécharger
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="max-h-[600px] overflow-y-auto pr-2 space-y-4">
+            {articles.map((article, index) => (
+              <div
+                key={index}
+                className={`border-2 rounded-lg p-4 transition-all ${
+                  article.status === "completed"
+                    ? "border-green-300 bg-green-50"
+                    : article.status === "analyzing"
+                    ? "border-blue-300 bg-blue-50"
+                    : article.status === "writing"
+                    ? "border-indigo-300 bg-indigo-50"
+                    : article.status === "error"
+                    ? "border-red-300 bg-red-50"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-bold text-gray-900 text-lg">{article.keyword}</h3>
+                      {article.status === "completed" && (
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                      )}
+                      {article.status === "analyzing" && (
+                        <div className="flex items-center gap-1 text-blue-600 text-sm">
+                          <Search className="w-4 h-4 animate-pulse" />
+                          <span>Analyse SERP...</span>
+                        </div>
+                      )}
+                      {article.status === "writing" && (
+                        <div className="flex items-center gap-1 text-indigo-600 text-sm">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Rédaction...</span>
+                        </div>
+                      )}
+                      {article.status === "error" && (
+                        <AlertCircle className="w-5 h-5 text-red-600" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <div>
+                        <Globe className="w-4 h-4 inline mr-1" />
+                        Pays: {article.country.toUpperCase()}
+                      </div>
+                      {article.perplexityModel && (
+                        <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                          article.perplexityModel === "sonar-pro" 
+                            ? "bg-purple-100 text-purple-700" 
+                            : "bg-indigo-100 text-indigo-700"
+                        }`}>
+                          {article.perplexityModel === "sonar-pro" ? "Sonar Pro ⭐" : "Sonar"}
+                        </div>
+                      )}
+                      {article.costs && article.costs.totalCost > 0 && (
+                        <div className="px-2 py-1 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                          💰 ${article.costs.totalCost.toFixed(4)}
+                        </div>
+                      )}
+                      {article.linkCount !== undefined && (
+                        <div className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700">
+                          🔗 {article.linkCount} liens
+                        </div>
+                      )}
+                    </div>
+                    {article.fullUrl && (
+                      <div className="mt-2 text-xs text-gray-500 font-mono bg-gray-50 px-2 py-1 rounded truncate">
+                        📍 {article.fullUrl}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cost Breakdown */}
+                {article.costs && article.costs.totalCost > 0 && (
+                  <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
+                    <div className="text-sm font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                      💰 Détails des Coûts
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <div className="text-xs text-gray-600 mb-1">SERP Analysis</div>
+                        <div className="text-lg font-bold text-indigo-600">${article.costs.serpCost.toFixed(4)}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-gray-600 mb-1">Rédaction</div>
+                        <div className="text-lg font-bold text-blue-600">${article.costs.writingCost.toFixed(4)}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-gray-600 mb-1">Total</div>
+                        <div className="text-xl font-bold text-purple-600">${article.costs.totalCost.toFixed(4)}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SERP Analysis Accordion */}
+                {article.serpAnalysis && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => toggleAccordion(index, 'serp')}
+                      className="w-full flex items-center justify-between p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border-2 border-blue-200 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                        <Search className="w-4 h-4" />
+                        📊 Analyse SERP
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(article.serpAnalysis, 'Analyse SERP');
+                          }}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded flex items-center gap-1 transition-colors"
+                        >
+                          <Copy className="w-3 h-3" />
+                          Copier
+                        </button>
+                        {expandedArticles[index]?.serp ? (
+                          <ChevronUp className="w-5 h-5 text-blue-600" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-blue-600" />
+                        )}
+                      </div>
+                    </button>
+                    {expandedArticles[index]?.serp && (
+                      <div className="mt-2 p-4 bg-white rounded-lg border-2 border-blue-200">
+                        <div className="max-h-64 overflow-y-auto text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          {article.serpAnalysis}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Content Accordion */}
+                {article.content && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => toggleAccordion(index, 'content')}
+                      className="w-full flex items-center justify-between p-4 bg-green-50 hover:bg-green-100 rounded-lg border-2 border-green-200 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-bold text-green-900">
+                        <FileText className="w-4 h-4" />
+                        📝 Contenu HTML Généré
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(article.content, 'Contenu HTML');
+                          }}
+                          className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded flex items-center gap-1 transition-colors"
+                        >
+                          <Copy className="w-3 h-3" />
+                          Copier HTML
+                        </button>
+                        {expandedArticles[index]?.content ? (
+                          <ChevronUp className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-green-600" />
+                        )}
+                      </div>
+                    </button>
+                    {expandedArticles[index]?.content && (
+                      <div className="mt-2 p-6 bg-white rounded-lg border-2 border-green-200 shadow-sm">
+                        <div className="text-sm font-bold text-green-900 mb-4 flex items-center gap-2">
+                          📝 Aperçu Article Complet
+                        </div>
+                    <div 
+                      className="max-h-[600px] overflow-y-auto pr-3"
+                      style={{
+                        fontSize: '15px',
+                        lineHeight: '1.8'
+                      }}
+                    >
+                      <style jsx>{`
+                        div :global(h1) {
+                          font-size: 2em;
+                          font-weight: 800;
+                          color: #1f2937;
+                          margin-bottom: 1.5rem;
+                          line-height: 1.2;
+                        }
+                        div :global(h2) {
+                          font-size: 1.5em;
+                          font-weight: 700;
+                          color: #374151;
+                          margin-top: 2rem;
+                          margin-bottom: 1rem;
+                          line-height: 1.3;
+                        }
+                        div :global(h3) {
+                          font-size: 1.25em;
+                          font-weight: 600;
+                          color: #4b5563;
+                          margin-top: 1.5rem;
+                          margin-bottom: 0.75rem;
+                          line-height: 1.4;
+                        }
+                        div :global(p) {
+                          margin-bottom: 1rem;
+                          color: #374151;
+                        }
+                        div :global(ul), div :global(ol) {
+                          margin: 1rem 0;
+                          padding-left: 1.5rem;
+                        }
+                        div :global(li) {
+                          margin-bottom: 0.5rem;
+                          color: #374151;
+                        }
+                        div :global(strong) {
+                          font-weight: 600;
+                          color: #1f2937;
+                        }
+                        div :global(a) {
+                          color: #2563eb;
+                          text-decoration: underline;
+                          font-weight: 500;
+                        }
+                        div :global(a:hover) {
+                          color: #1d4ed8;
+                        }
+                        div :global(table) {
+                          width: 100%;
+                          border-collapse: collapse;
+                          margin: 1.5rem 0;
+                        }
+                        div :global(th), div :global(td) {
+                          padding: 0.75rem;
+                          border: 1px solid #e5e7eb;
+                          text-align: left;
+                        }
+                        div :global(th) {
+                          background-color: #f3f4f6;
+                          font-weight: 600;
+                        }
+                      `}</style>
+                      <div dangerouslySetInnerHTML={{ __html: article.content }} />
+                    </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            </div>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {articles.length === 0 && (
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 p-12 text-center">
+            <div className="max-w-2xl mx-auto">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                <FileText className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                Créez vos articles de blog SEO
+              </h3>
+              <p className="text-gray-600 mb-6">
+                L'IA va d'abord analyser les SERP (Top 10-15) pour comprendre l'intention utilisateur, puis rédiger un article 100% optimisé SEO.
+              </p>
+              <div className="bg-white rounded-lg p-6 text-left space-y-4">
+                <div>
+                  <h4 className="font-bold text-gray-900 mb-2">🔍 Processus en 2 étapes :</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-start gap-2">
+                      <span className="text-blue-500 font-bold">1.</span>
+                      <span className="text-gray-700"><strong>Analyse SERP</strong> → Recherche Google + Scraping Top 10-15 + Extraction intentions/mots-clés/sujets</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-blue-500 font-bold">2.</span>
+                      <span className="text-gray-700"><strong>Rédaction SEO</strong> → Article complet optimisé selon l'analyse + Respect des règles SEO</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fixed Progress Notification Bubble - Bottom Right */}
+      {articles.length > 0 && (isProcessing || completedCount > 0) && (
+        <div className="fixed bottom-5 right-5 z-50">
+          <div className={`bg-gradient-to-r ${
+            progressPercentage === 100 
+              ? 'from-green-500 to-emerald-500' 
+              : isProcessing 
+                ? 'from-blue-500 to-indigo-500' 
+                : 'from-gray-500 to-gray-600'
+          } text-white rounded-xl shadow-2xl p-4 min-w-[220px] transform transition-all duration-300 hover:scale-105`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium opacity-90">
+                {progressPercentage === 100 ? '✓ Terminé' : isProcessing ? '⚡ En cours' : '⏸ Pause'}
+              </span>
+              {isProcessing && !isPaused && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+            </div>
+            
+            <div className="flex items-baseline gap-2 mb-2.5">
+              <span className="text-3xl font-bold">{progressPercentage}%</span>
+              <span className="text-sm opacity-75">
+                {completedCount}/{articles.length}
+              </span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-white h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progressPercentage}%` }}
+              />
+            </div>
+
+            {isProcessing && currentStep && (
+              <div className="mt-2 text-xs opacity-75 truncate">
+                {currentStep}
+              </div>
+            )}
+
+            {/* Pause/Resume Button when processing */}
+            {isProcessing && progressPercentage < 100 && (
+              <button
+                onClick={togglePause}
+                className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium text-sm shadow-sm ${
+                  isPaused 
+                    ? 'bg-white text-green-600 hover:bg-green-50' 
+                    : 'bg-white text-orange-600 hover:bg-orange-50'
+                }`}
+              >
+                {isPaused ? (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Reprendre
+                  </>
+                ) : (
+                  <>
+                    <Pause className="w-4 h-4" />
+                    Pause
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Download Button when completed */}
+            {progressPercentage === 100 && (
+              <button
+                onClick={downloadArticles}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-white text-green-600 rounded-lg hover:bg-green-50 transition-colors font-medium text-sm shadow-sm"
+              >
+                <Download className="w-4 h-4" />
+                Télécharger
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
