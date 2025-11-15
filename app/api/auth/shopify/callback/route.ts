@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
     }
 
     console.log("📥 OAuth callback received:", { shop, code: code.substring(0, 10) + "..." });
+    console.log("🔑 API Key:", process.env.SHOPIFY_API_KEY ? "✅ Loaded" : "❌ Missing");
+    console.log("🔐 API Secret:", process.env.SHOPIFY_API_SECRET ? "✅ Loaded" : "❌ Missing");
 
     // Échanger le code contre un access token
     const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
@@ -46,11 +48,30 @@ export async function GET(req: NextRequest) {
     console.log("✅ Access token received:", accessToken.substring(0, 10) + "...");
     console.log("📋 Scopes:", scope);
 
+    // Récupérer les infos de la boutique (nom, email, etc.)
+    let shopName = shop.replace(".myshopify.com", "");
+    try {
+      const shopInfoResponse = await fetch(`https://${shop}/admin/api/2025-01/shop.json`, {
+        headers: {
+          "X-Shopify-Access-Token": accessToken,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (shopInfoResponse.ok) {
+        const shopData = await shopInfoResponse.json();
+        shopName = shopData.shop.name; // Nom réel de la boutique
+        console.log("🏪 Shop name:", shopName);
+      }
+    } catch (error) {
+      console.log("⚠️ Could not fetch shop name, using default");
+    }
+
     // Rediriger vers la page de configuration avec les infos
-    const redirectUrl = new URL("/shopify-stores", req.url);
-    redirectUrl.searchParams.set("shop", shop);
-    redirectUrl.searchParams.set("token", accessToken);
-    redirectUrl.searchParams.set("success", "true");
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const redirectUrl = `${appUrl}/shopify-stores?shop=${shop}&token=${accessToken}&name=${encodeURIComponent(shopName)}&success=true`;
+
+    console.log("🔄 Redirecting to:", redirectUrl);
 
     return NextResponse.redirect(redirectUrl);
   } catch (error: any) {

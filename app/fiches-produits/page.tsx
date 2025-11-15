@@ -47,6 +47,16 @@ export default function FichesProduits() {
   const [scheduledDate, setScheduledDate] = useState<string>("");
   const [isPublishing, setIsPublishing] = useState(false);
 
+  // Planification states
+  const [useScheduler, setUseScheduler] = useState(false);
+  const [productsPerDay, setProductsPerDay] = useState(10);
+  const [startDate, setStartDate] = useState<string>("");
+  const [immediatePublish, setImmediatePublish] = useState(0);
+  const [scheduledProducts, setScheduledProducts] = useState<Array<{
+    product: ProcessedProduct;
+    scheduledDate: Date;
+  }>>([]);
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -58,26 +68,34 @@ export default function FichesProduits() {
         // Keep ALL rows including empty ones to preserve Shopify structure
         setCsvData(data);
         
-        // Initialize processed products - only for rows with Title
+        // Initialize processed products - only for rows with Title AND Handle
+        // (lignes sans Handle = images supplémentaires, on les ignore pour le traitement)
         const products: ProcessedProduct[] = [];
+        const seenHandles = new Set<string>();
+        
         data.forEach((row, index) => {
-          if (row.Title && row.Title.trim()) {
-            // Extract first image URL from "Image Src" column (Shopify CSV format)
-            let imageUrl = "";
-            if (row["Image Src"]) {
-              // If multiple URLs separated by semicolon or comma, take the first one
-              const urls = row["Image Src"].split(/[;,]/);
-              imageUrl = urls[0].trim();
+          if (row.Title && row.Title.trim() && row.Handle && row.Handle.trim()) {
+            // Ne traiter que la première ligne de chaque produit (avec Handle unique)
+            if (!seenHandles.has(row.Handle)) {
+              seenHandles.add(row.Handle);
+              
+              // Extract first image URL from "Image Src" column (Shopify CSV format)
+              let imageUrl = "";
+              if (row["Image Src"]) {
+                // If multiple URLs separated by semicolon or comma, take the first one
+                const urls = row["Image Src"].split(/[;,]/);
+                imageUrl = urls[0].trim();
+              }
+              
+              products.push({
+                originalTitle: row.Title,
+                imageUrl: imageUrl || undefined,
+                newTitle: "",
+                newDescription: "",
+                status: "pending",
+                rowIndex: index, // Keep original index to match csvData
+              });
             }
-            
-            products.push({
-              originalTitle: row.Title,
-              imageUrl: imageUrl || undefined,
-              newTitle: "",
-              newDescription: "",
-              status: "pending",
-              rowIndex: index, // Keep original index to match csvData
-            });
           }
         });
         setProcessedProducts(products);
@@ -168,9 +186,16 @@ export default function FichesProduits() {
         // Update with results
         results.forEach((result: any) => {
           if (result.success) {
+            // Trouver le produit correspondant dans processedProducts
+            const productIndex = result.index;
+            const product = processedProducts[productIndex];
+            
+            if (!product) return;
+            
+            // Mettre à jour processedProducts
             setProcessedProducts(prev => 
               prev.map((p, idx) => 
-                idx === result.index ? { 
+                idx === productIndex ? { 
                   ...p, 
                   newTitle: result.newTitle || p.newTitle, 
                   newDescription: result.description || p.newDescription,
@@ -179,15 +204,15 @@ export default function FichesProduits() {
               )
             );
 
+            // Mettre à jour csvData à la BONNE ligne (rowIndex du produit)
             setCsvData(prev => 
               prev.map((row, idx) => {
-                if (idx === result.index) {
+                if (idx === product.rowIndex) {
                   const updates: any = { ...row };
                   if (generationMode === "both" || generationMode === "title") {
                     updates.Title = result.newTitle;
                   }
                   if (generationMode === "both" || generationMode === "description") {
-                    updates.Description = result.description;
                     updates["Body (HTML)"] = result.description; // Replace Body (HTML) with new description
                   }
                   return updates;
@@ -384,6 +409,76 @@ export default function FichesProduits() {
     document.body.removeChild(link);
   };
 
+  // Préparer les données complètes du produit depuis le CSV
+  const prepareProductData = (product: ProcessedProduct) => {
+    const originalRow = csvData[product.rowIndex];
+    let productHandle = originalRow?.Handle;
+    
+    // Si pas de Handle, le générer depuis le titre
+    if (!productHandle || !productHandle.trim()) {
+      productHandle = product.newTitle
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+    
+    // Collecter toutes les images
+    const allImages: { src: string }[] = [];
+    if (originalRow?.Handle && csvData.length > 0) {
+      csvData.forEach(row => {
+        if (row.Handle === originalRow.Handle && row['Image Src'] && row['Image Src'].trim()) {
+          allImages.push({ src: row['Image Src'].trim() });
+        }
+      });
+    }
+    if (allImages.length === 0 && product.imageUrl) {
+      allImages.push({ src: product.imageUrl });
+    }
+    
+    // Collecter toutes les variantes
+    const variants: any[] = [];
+    if (originalRow?.Handle && csvData.length > 0) {
+      csvData.forEach(row => {
+        if (row.Handle === originalRow.Handle || (!row.Handle && row['Variant SKU'])) {
+          if (row['Variant SKU'] || row['Option1 Value']) {
+            variants.push({
+              sku: row['Variant SKU'] || '',
+              price: row['Variant Price'] || originalRow['Variant Price'] || '0',
+              compare_at_price: row['Variant Compare At Price'] || '',
+              inventory_quantity: row['Variant Inventory Qty'] || 0,
+              inventory_policy: row['Variant Inventory Policy'] || 'deny',
+              fulfillment_service: row['Variant Fulfillment Service'] || 'manual',
+              weight: row['Variant Grams'] ? parseFloat(row['Variant Grams']) / 1000 : 0,
+              weight_unit: 'kg',
+              option1: row['Option1 Value'] || null,
+              option2: row['Option2 Value'] || null,
+              option3: row['Option3 Value'] || null,
+            });
+          }
+        }
+      });
+    }
+    
+    return {
+      title: product.newTitle,
+      body_html: product.newDescription,
+      handle: productHandle,
+      vendor: originalRow?.Vendor || productNiche || "EcomFarm",
+      product_type: originalRow?.Type || productNiche || '',
+      tags: originalRow?.Tags || '',
+      published: originalRow?.Published === 'TRUE' || originalRow?.Published === 'true',
+      options: [
+        originalRow?.['Option1 Name'] ? { name: originalRow['Option1 Name'], values: [] } : null,
+        originalRow?.['Option2 Name'] ? { name: originalRow['Option2 Name'], values: [] } : null,
+        originalRow?.['Option3 Name'] ? { name: originalRow['Option3 Name'], values: [] } : null,
+      ].filter(Boolean),
+      images: allImages,
+      variants: variants.length > 0 ? variants : undefined,
+    };
+  };
+
   const publishToShopify = async (product: ProcessedProduct) => {
     if (!selectedStore) {
       alert("⚠️ Veuillez sélectionner un store Shopify");
@@ -403,13 +498,7 @@ export default function FichesProduits() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           store: selectedStore,
-          product: {
-            title: product.newTitle,
-            body_html: product.newDescription,
-            vendor: productNiche || "EcomFarm",
-            product_type: productNiche,
-            images: product.imageUrl ? [{ src: product.imageUrl }] : [],
-          },
+          product: prepareProductData(product), // Utiliser la fonction helper
           publishMode,
           scheduledDate: publishMode === 'scheduled' ? scheduledDate : undefined,
         }),
@@ -429,6 +518,62 @@ export default function FichesProduits() {
     }
   };
 
+  // Générer les dates de planification
+  const generateScheduledDates = () => {
+    if (!startDate) {
+      alert("⚠️ Veuillez sélectionner une date de début");
+      return;
+    }
+
+    const completedProducts = processedProducts.filter(p => p.status === "completed" && p.newTitle && p.newDescription);
+    
+    if (completedProducts.length === 0) {
+      alert("⚠️ Aucun produit complété à planifier");
+      return;
+    }
+
+    const scheduled: Array<{ product: ProcessedProduct; scheduledDate: Date }> = [];
+    const start = new Date(startDate);
+    
+    // Produits à publier immédiatement
+    const immediateProducts = completedProducts.slice(0, immediatePublish);
+    const scheduledProductsData = completedProducts.slice(immediatePublish);
+
+    // Publier immédiatement
+    immediateProducts.forEach((product, index) => {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + index * 2); // 2 min d'écart
+      
+      scheduled.push({ product, scheduledDate: now });
+    });
+
+    // Planifier les autres
+    scheduledProductsData.forEach((product, index) => {
+      const dayOffset = Math.floor(index / productsPerDay);
+      const productDate = new Date(start);
+      productDate.setDate(productDate.getDate() + dayOffset);
+      
+      // Ajouter un intervalle aléatoire entre 20-24h (en minutes)
+      const baseMinutes = (index % productsPerDay) * (24 * 60 / productsPerDay);
+      const randomOffset = Math.random() * 240 - 120; // ±2h de variation
+      const totalMinutes = baseMinutes + randomOffset;
+      
+      productDate.setHours(0, 0, 0, 0);
+      productDate.setMinutes(totalMinutes);
+      
+      scheduled.push({ product, scheduledDate: productDate });
+    });
+
+    // Trier par date
+    scheduled.sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime());
+    setScheduledProducts(scheduled);
+    
+    const totalDays = Math.ceil(scheduledProductsData.length / productsPerDay);
+    const lastDate = scheduled[scheduled.length - 1].scheduledDate;
+    
+    alert(`✅ Planning généré !\n\n📊 ${scheduled.length} produits\n🚀 ${immediatePublish} immédiat(s)\n📅 ${scheduledProductsData.length} planifié(s) sur ${totalDays} jours\n📌 Dernier : ${lastDate.toLocaleDateString('fr-FR')} à ${lastDate.toLocaleTimeString('fr-FR')}`);
+  };
+
   const publishAllToShopify = async () => {
     if (!selectedStore) {
       alert("⚠️ Veuillez sélectionner un store Shopify");
@@ -442,30 +587,44 @@ export default function FichesProduits() {
       return;
     }
 
-    if (!confirm(`Publier ${completedProducts.length} produit(s) sur Shopify ?`)) {
-      return;
+    // Si mode planification activé
+    if (useScheduler && publishMode === 'scheduled') {
+      if (scheduledProducts.length === 0) {
+        alert("⚠️ Veuillez d'abord générer le planning");
+        return;
+      }
+      
+      if (!confirm(`Publier ${scheduledProducts.length} produit(s) avec planification automatique ?`)) {
+        return;
+      }
+    } else {
+      if (!confirm(`Publier ${completedProducts.length} produit(s) sur Shopify ?`)) {
+        return;
+      }
     }
 
     setIsPublishing(true);
     let successCount = 0;
     let errorCount = 0;
 
-    for (const product of completedProducts) {
+    // Utiliser les produits planifiés si mode scheduler activé
+    const productsToPublish = useScheduler && publishMode === 'scheduled' 
+      ? scheduledProducts 
+      : completedProducts.map(p => ({ product: p, scheduledDate: new Date() }));
+
+    for (const item of productsToPublish) {
+      const product = 'product' in item ? item.product : item;
+      const schedDate = 'scheduledDate' in item ? item.scheduledDate : undefined;
+      
       try {
         const response = await fetch("/api/shopify/publish-product", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             store: selectedStore,
-            product: {
-              title: product.newTitle,
-              body_html: product.newDescription,
-              vendor: productNiche || "EcomFarm",
-              product_type: productNiche,
-              images: product.imageUrl ? [{ src: product.imageUrl }] : [],
-            },
+            product: prepareProductData(product), // Utiliser la fonction helper
             publishMode,
-            scheduledDate: publishMode === 'scheduled' ? scheduledDate : undefined,
+            scheduledDate: publishMode === 'scheduled' && schedDate ? schedDate.toISOString() : undefined,
           }),
         });
 
@@ -506,7 +665,7 @@ export default function FichesProduits() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
-              <FileText className="w-7 h-7 text-white" />
+              <ShoppingBag className="w-7 h-7 text-white" />
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Fiches Produits</h1>
@@ -882,6 +1041,107 @@ export default function FichesProduits() {
               )}
             </div>
 
+            {/* Planification Automatique */}
+            {selectedStore && publishMode === 'scheduled' && (
+              <div className="bg-white border-2 border-blue-200 rounded-xl p-5 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <input
+                    type="checkbox"
+                    id="useScheduler"
+                    checked={useScheduler}
+                    onChange={(e) => setUseScheduler(e.target.checked)}
+                    className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <label htmlFor="useScheduler" className="text-lg font-bold text-gray-900 cursor-pointer">
+                    🗓️ Planification Automatique
+                  </label>
+                </div>
+
+                {useScheduler && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          📅 Date de début
+                        </label>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                          className="w-full px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          📊 Produits par jour
+                        </label>
+                        <input
+                          type="number"
+                          value={productsPerDay}
+                          onChange={(e) => setProductsPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                          min="1"
+                          max="100"
+                          className="w-full px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          🚀 Publication immédiate
+                        </label>
+                        <input
+                          type="number"
+                          value={immediatePublish}
+                          onChange={(e) => setImmediatePublish(Math.max(0, Math.min(completedCount, parseInt(e.target.value) || 0)))}
+                          min="0"
+                          max={completedCount}
+                          className="w-full px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <p className="text-xs text-gray-600 mt-1">
+                          Publier maintenant (reste planifié)
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={generateScheduledDates}
+                      disabled={!startDate || completedCount === 0}
+                      className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ⚡ Générer le Planning ({completedCount} produits)
+                    </button>
+
+                    {scheduledProducts.length > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-sm font-semibold text-blue-900 mb-2">
+                          ✅ Planning généré : {scheduledProducts.length} produits
+                        </p>
+                        {immediatePublish > 0 && (
+                          <p className="text-xs text-orange-700 mb-1">
+                            🚀 {immediatePublish} produit(s) immédiat(s) • 📅 {scheduledProducts.length - immediatePublish} planifié(s) sur {Math.ceil((scheduledProducts.length - immediatePublish) / productsPerDay)} jours
+                          </p>
+                        )}
+                        {immediatePublish === 0 && (
+                          <p className="text-xs text-blue-700 mb-1">
+                            📅 {scheduledProducts.length} produit(s) planifié(s) sur {Math.ceil(scheduledProducts.length / productsPerDay)} jours
+                          </p>
+                        )}
+                        <p className="text-xs text-blue-700">
+                          📌 Premier : {scheduledProducts[0].scheduledDate.toLocaleString('fr-FR')}<br/>
+                          📌 Dernier : {scheduledProducts[scheduledProducts.length - 1].scheduledDate.toLocaleString('fr-FR')}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-2">
+                          ⏱️ Intervalle aléatoire de 20-24h entre chaque produit avec minutes variables
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Publish All Button */}
             {selectedStore && (
               <>
@@ -907,7 +1167,10 @@ export default function FichesProduits() {
 
                 <div className="mt-3 text-xs text-gray-600 bg-white rounded-lg p-3 border border-gray-200">
                   💡 <strong>Info :</strong> Les produits seront publiés en mode <strong>{publishMode === 'draft' ? 'Brouillon' : publishMode === 'scheduled' ? 'Programmé' : 'Actif'}</strong>
-                  {publishMode === 'scheduled' && scheduledDate && ` le ${new Date(scheduledDate).toLocaleDateString('fr-FR')}`}
+                  {publishMode === 'scheduled' && useScheduler && scheduledProducts.length > 0 && (
+                    <span className="text-blue-600 font-semibold"> avec planification automatique sur {Math.ceil(scheduledProducts.length / productsPerDay)} jours</span>
+                  )}
+                  {publishMode === 'scheduled' && !useScheduler && scheduledDate && ` le ${new Date(scheduledDate).toLocaleDateString('fr-FR')}`}
                 </div>
               </>
             )}

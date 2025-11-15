@@ -98,6 +98,86 @@ export default function ArticlesBlog() {
     }
   };
 
+  // Export to CSV for planification
+  const exportToCSV = () => {
+    const completedArticles = groups.flatMap(group =>
+      group.articles.filter(article => article.status === 'completed')
+    );
+
+    if (completedArticles.length === 0) {
+      alert('❌ Aucun article terminé à exporter');
+      return;
+    }
+
+    // CSV Header
+    const header = ['Title', 'Body HTML', 'Author', 'Tags', 'Summary HTML', 'Blog Handle'];
+    
+    // CSV Rows
+    const rows = completedArticles.map(article => {
+      const group = groups.find(g => g.articles.includes(article));
+      return [
+        article.keyword,
+        article.content.replace(/"/g, '""'), // Escape quotes
+        'EcomFarm AI',
+        'ai,seo,generated',
+        '', // Summary HTML (vide pour l'instant)
+        group?.blogHandle || blogHandle
+      ];
+    });
+
+    // Create CSV content
+    const csvContent = [
+      header.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Download CSV
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `articles-blog-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    alert(`✅ ${completedArticles.length} article(s) exporté(s) en CSV !`);
+  };
+
+  // Export to JSON for planification
+  const exportToJSON = () => {
+    const completedArticles = groups.flatMap(group =>
+      group.articles.filter(article => article.status === 'completed')
+    );
+
+    if (completedArticles.length === 0) {
+      alert('❌ Aucun article terminé à exporter');
+      return;
+    }
+
+    const jsonData = completedArticles.map(article => {
+      const group = groups.find(g => g.articles.includes(article));
+      return {
+        title: article.keyword,
+        body_html: article.content,
+        author: 'EcomFarm AI',
+        tags: 'ai,seo,generated',
+        summary_html: '',
+        blog_handle: group?.blogHandle || blogHandle
+      };
+    });
+
+    // Download JSON
+    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `articles-blog-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    alert(`✅ ${completedArticles.length} article(s) exporté(s) en JSON !`);
+  };
+
   // Load site URL and blog handle from localStorage
   useEffect(() => {
     const savedUrl = localStorage.getItem("siteUrl");
@@ -1367,6 +1447,34 @@ export default function ArticlesBlog() {
                 </div>
               </div>
             </div>
+
+            {/* Export Buttons for Planification */}
+            {allArticles.some(a => a.status === 'completed') && (
+              <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border-2 border-blue-200">
+                <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  📤 Exporter pour Planification
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={exportToCSV}
+                    className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md font-semibold text-sm flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exporter CSV
+                  </button>
+                  <button
+                    onClick={exportToJSON}
+                    className="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-md font-semibold text-sm flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exporter JSON
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600 mt-3 text-center">
+                  💡 Importez le fichier dans la page <strong>Planification</strong> pour publier sur Shopify
+                </p>
+              </div>
+            )}
           </div>
         )}
 

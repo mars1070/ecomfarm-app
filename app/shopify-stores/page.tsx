@@ -29,15 +29,16 @@ export default function ShopifyStoresPage() {
     const shop = urlParams.get("shop");
     const token = urlParams.get("token");
     const success = urlParams.get("success");
+    const shopName = urlParams.get("name");
 
     if (success === "true" && shop && token) {
-      // Extraire le nom du store depuis le domaine
-      const storeName = shop.replace(".myshopify.com", "");
+      // Utiliser le nom récupéré depuis Shopify, ou fallback sur le domaine
+      const storeName = shopName || shop.replace(".myshopify.com", "").charAt(0).toUpperCase() + shop.replace(".myshopify.com", "").slice(1);
       
       // Créer automatiquement le store
       const newStore: ShopifyStore = {
         id: Date.now().toString(),
-        name: storeName.charAt(0).toUpperCase() + storeName.slice(1),
+        name: storeName,
         shopDomain: shop,
         accessToken: token,
         apiVersion: "2025-01",
@@ -46,14 +47,21 @@ export default function ShopifyStoresPage() {
       };
 
       const existingStores = JSON.parse(localStorage.getItem("shopifyStores") || "[]");
-      const updatedStores = [...existingStores, newStore];
-      localStorage.setItem("shopifyStores", JSON.stringify(updatedStores));
-      setStores(updatedStores);
+      
+      // Vérifier si le store n'existe pas déjà
+      const storeExists = existingStores.some((s: ShopifyStore) => s.shopDomain === shop);
+      
+      if (!storeExists) {
+        const updatedStores = [...existingStores, newStore];
+        localStorage.setItem("shopifyStores", JSON.stringify(updatedStores));
+        setStores(updatedStores);
+        alert(`✅ Store "${newStore.name}" connecté avec succès via OAuth !`);
+      } else {
+        alert(`⚠️ Ce store est déjà connecté !`);
+      }
 
       // Nettoyer l'URL
       window.history.replaceState({}, document.title, "/shopify-stores");
-      
-      alert(`✅ Store "${newStore.name}" connecté avec succès via OAuth !`);
     }
   }, []);
 
@@ -137,14 +145,41 @@ export default function ShopifyStoresPage() {
           </p>
         </div>
 
-        {/* Add Store Button */}
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="mb-6 flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Ajouter un Store Shopify
-        </button>
+        {/* Add Store Buttons */}
+        <div className="mb-6 flex gap-4">
+          <button
+            onClick={() => {
+              const shop = prompt("⚠️ IMPORTANT: Entrez votre domaine .myshopify.com\n\nExemple: ocean-jewelry.myshopify.com\n(PAS votre domaine personnalisé comme grillzteeth.store)\n\nVotre domaine .myshopify.com :");
+              if (shop) {
+                // Nettoyer l'input utilisateur
+                const cleanShop = shop
+                  .replace(/^https?:\/\//, '')
+                  .replace(/^www\./, '')
+                  .replace(/\/$/, '')
+                  .trim();
+                
+                if (!cleanShop.includes('.myshopify.com')) {
+                  alert("❌ Erreur: Vous devez utiliser votre domaine .myshopify.com\n\nExemple: ocean-jewelry.myshopify.com\n\nPour trouver votre domaine .myshopify.com:\n1. Allez dans votre admin Shopify\n2. Settings → Domains\n3. Copiez votre domaine .myshopify.com");
+                  return;
+                }
+                
+                window.location.href = `/api/auth/shopify/start?shop=${cleanShop}`;
+              }
+            }}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg font-medium"
+          >
+            <Store className="w-5 h-5" />
+            🔗 Connecter via OAuth (Recommandé)
+          </button>
+          
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Ajouter Manuellement
+          </button>
+        </div>
 
         {/* Add Store Form */}
         {showAddForm && (

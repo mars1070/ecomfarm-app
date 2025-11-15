@@ -2,17 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Package, BookOpen, Settings, DollarSign, Info, CheckSquare, Store } from "lucide-react";
+import { FileText, ShoppingBag, BookOpen, Settings, DollarSign, Info, CheckSquare, Store, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { name: "Fiches Produits", href: "/fiches-produits", icon: Package },
+  { name: "Rédaction prête", title: true },
+  { name: "Fiches Produits", href: "/fiches-produits", icon: ShoppingBag },
   { name: "Collections", href: "/collections", icon: FileText },
   { name: "Articles de Blog", href: "/blog", icon: BookOpen },
 ];
 
 const bottomNavigation = [
+  { name: "Gestion", title: true },
   { name: "🏪 Mes Stores Shopify", href: "/shopify-stores", icon: Store },
+  { name: "Planification", href: "/planification", icon: Calendar },
+  { name: "Outils", title: true },
   { name: "📝 To-Do List", href: "/todo", icon: CheckSquare },
   { name: "📚 Guide Complet", href: "/info", icon: Info },
   { name: "💰 Tarification", href: "/tarification", icon: DollarSign },
@@ -31,11 +35,18 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navigation.map((item) => {
+          if (item.title) {
+            return (
+              <div key={item.name} className="px-3 pt-4 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {item.name}
+              </div>
+            );
+          }
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.name}
-              href={item.href}
+              href={item.href!}
               className={cn(
                 "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
                 isActive
@@ -43,7 +54,7 @@ export default function Sidebar() {
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              <item.icon className="w-5 h-5 mr-3" />
+              {item.icon && <item.icon className="w-5 h-5 mr-3" />}
               {item.name}
             </Link>
           );
@@ -53,11 +64,18 @@ export default function Sidebar() {
       {/* Bottom Navigation (To-Do, Guide, Tarification) */}
       <div className="px-3 py-4 border-t border-gray-200 space-y-1">
         {bottomNavigation.map((item) => {
+          if (item.title) {
+            return (
+              <div key={item.name} className="px-3 pt-4 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {item.name}
+              </div>
+            );
+          }
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.name}
-              href={item.href}
+              href={item.href!}
               className={cn(
                 "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
                 isActive
@@ -65,7 +83,7 @@ export default function Sidebar() {
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              <item.icon className="w-5 h-5 mr-3" />
+              {item.icon && <item.icon className="w-5 h-5 mr-3" />}
               {item.name}
             </Link>
           );

@@ -63,10 +63,6 @@ export default function ShopifyStoreSelector({ onStoreSelect, selectedStoreId }:
 
   return (
     <div className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-2">
-        🏪 Store Shopify
-      </label>
-      
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-xl hover:border-green-400 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
