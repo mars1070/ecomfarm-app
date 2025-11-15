@@ -114,7 +114,7 @@ Respond ONLY with the unique, specific product title in ${targetLang}, without q
       ]
     });
 
-    const title = response.text.trim();
+    const title = response.text?.trim() || '';
 
     return NextResponse.json({ title });
   } catch (error: any) {
