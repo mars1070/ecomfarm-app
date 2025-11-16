@@ -429,6 +429,26 @@ export default function ArticlesBlog() {
         const { analysis, costs: serpCosts } = await serpResponse.json();
         const serpEndTime = Date.now();
         const serpDuration = ((serpEndTime - serpStartTime) / 1000).toFixed(1);
+        
+        // Check for SERP mismatch (e.g., "Offset Grillz" returning BBQ results instead of jewelry)
+        if (analysis && analysis.startsWith("SERP_MISMATCH:")) {
+          const mismatchReason = analysis.replace("SERP_MISMATCH:", "").trim();
+          const errorLog = `❌ SERP incohérent pour "${article.keyword}": ${mismatchReason}`;
+          setLogs(prev => [...prev, errorLog, '⚠️ Article ignoré - SERP ne correspond pas à l\'intention de recherche attendue', '']);
+          
+          // Mark article as error
+          setGroups(prev => prev.map(g => ({
+            ...g,
+            articles: g.articles.map(a => 
+              a.groupId === article.groupId && a.keyword === article.keyword
+                ? { ...a, status: "error" as const, error: `SERP incohérent: ${mismatchReason}` }
+                : a
+            )
+          })));
+          
+          continue; // Skip to next article
+        }
+        
         const serpLog = `✅ Analyse SERP terminée en ${serpDuration}s - Coût: $${serpCosts?.total?.toFixed(4) || '0.0000'}`;
         setLogs(prev => [...prev, serpLog]);
 

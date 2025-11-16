@@ -116,10 +116,14 @@ Provide a detailed analysis in ${language}.`;
 
     const refinementPrompt = `You are an SEO expert analyzing SERP data. Extract and organize ONLY the most valuable SEO insights for writing.
 
+KEYWORD: "${keyword}"
+
 SERP ANALYSIS:
 ${serpAnalysis}
 
 ${relatedQuestions.length > 0 ? `\nKEY QUESTIONS:\n${relatedQuestions.slice(0, 5).join('\n')}` : ''}
+
+⚠️ VALIDATION: First check if SERP matches keyword intent. If SERP is about a COMPLETELY DIFFERENT topic (e.g., "Offset Grillz" = jewelry but SERP shows BBQ), respond ONLY with: "SERP_MISMATCH: [reason]". Otherwise, create the brief below.
 
 CREATE A FOCUSED BRIEF (800-1000 WORDS):
 

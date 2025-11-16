@@ -164,171 +164,56 @@ LINK INTEGRATION RULES:
       }
     }
 
-    const writingPrompt = `You are an expert SEO content writer. Write a complete, SEO-optimized blog article.
+    const writingPrompt = `Expert SEO writer. Create a focused, high-value blog article.
 
-IMPORTANT: Write evergreen content. Do NOT include specific years (like "2024", "2025", etc.) in titles or content unless absolutely necessary for the topic. Keep the content timeless.
+KEYWORD: ${keyword}
 
-KEYWORD/TOPIC: ${keyword}
-
-SERP ANALYSIS & BRIEF:
+SERP BRIEF:
 ${serpAnalysis}
 
-STRICT SEO WRITING RULES:
+CORE RULES:
 
-STRUCTURE (MANDATORY):
-- DO NOT include <h1> tag (Shopify generates it automatically from the article title)
-- Start directly with introduction paragraph (no heading, 40-60 words - SHORT and punchy!)
-- Then 5-8 sections with <h2> headings
-- Use <h3> for subsections when relevant
-- Conclusion paragraph at the end (60-80 words)
-- Total length: 1500-2500 words
+STRUCTURE:
+- NO <h1> tag (Shopify auto-generates)
+- Intro: 40-60 words (punchy!)
+- 4-6 H2 sections (use H3 for subsections)
+- Conclusion: 60-80 words
+- Length: 1200-1800 words (prioritize essentials, cut fluff)
 
-H2/H3 TITLES:
-- Include target keyword or variations in 60% of H2 titles
-- Address user questions/needs
-- Clear, descriptive, engaging
-- Use question format when appropriate (with "?")
-- Add relevant emojis at the START of H2/H3 when it enhances clarity
-- Examples: "✅ Benefits", "❌ Risks to Avoid", "💰 Cost Breakdown", "🎯 How to Choose", "⚠️ Important Warning"
-- Don't force emojis - use only when they add visual value
+CONTENT STRATEGY:
+- Answer search intent directly - no tangents
+- Cover key topics from brief + add expert insights when valuable
+- Use VARIED keywords: main keyword + semantic variations + long-tail phrases + niche terms
+- Evergreen content (avoid years like "2024", "2025")
+- Facts over marketing hype
 
-CONTENT QUALITY:
-- Follow ALL insights from SERP analysis as your BASE
-- Cover ALL topics identified in the brief
-- Use ALL essential keywords naturally (including niche-specific slang/jargon)
-- Answer user intent completely
-- Provide REAL value (facts, tips, examples)
-- Write in a natural, engaging style
-- Match the tone identified in analysis
+FORMATTING:
+- Paragraphs: 40-80 words (short = readable)
+- H2/H3: Add emojis when helpful (✅ ❌ 💰 🎯 ⚠️)
+- <strong> tags: Use for important keywords, key facts, specs, prices (2-5 per section)
+- Lists: Include 1-2 bullet lists (<ul>) with 4-6 items for features/tips/benefits
+- Tables: Use for comparisons (2+ options) with inline styles + emojis
 
-CREATIVE FREEDOM (IMPORTANT!):
-- You have FULL PERMISSION to go beyond the brief
-- Add valuable insights, tips, or angles not mentioned in SERP analysis
-- Deepen explanations where it adds value
-- Include relevant details or nuances you know about the topic
-- Add expert-level information that elevates the content
-- The brief is your FOUNDATION, not your LIMIT
-- Be comprehensive and thorough - don't hold back valuable information
-- If you know something important that's missing from the brief, ADD IT
+Table template:
+<table style="width:100%; border-collapse:collapse; margin:20px 0;">
+  <tr style="background:#f3f4f6;"><th style="padding:12px; border:1px solid #ddd;">Critère</th><th style="padding:12px; border:1px solid #ddd;">Option 1</th></tr>
+  <tr><td style="padding:10px; border:1px solid #ddd;"><strong>Prix</strong></td><td style="padding:10px; border:1px solid #ddd;">💰 $50-100</td></tr>
+</table>
 
-KEYWORD USAGE:
-- Main keyword in first paragraph and naturally throughout
-- Use semantic variations and related terms
-- Include niche-specific terminology (slang, jargon, technical terms)
-- Don't force keywords - stay natural and conversational
-- Keyword density: 1-2% (natural occurrence)
-
-STRONG TAGS:
-- Distribute throughout the article (including lower sections, not just top)
-- 2-5 per section when relevant (not every paragraph)
-- Use strategically for:
-  * Primary keywords when naturally relevant
-  * Ultra-important ideas or key takeaways
-  * Critical technical terms or specifications
-  * Important numbers/stats/data points
-  * Short impactful phrases (2-4 words max)
-- Examples: <strong>18 carats</strong>, <strong>livraison gratuite</strong>, <strong>VVS diamonds</strong>
-- Don't overuse - quality over quantity, stay natural
-
-PARAGRAPHS:
-- 40-80 words per paragraph (SHORTER = more readable!)
-- One main idea per paragraph
-- Use transition words between paragraphs
-- Mix short (2-3 sentences) and medium paragraphs
-- Break up long explanations into multiple short paragraphs
-
-VISUAL ELEMENTS & FORMATTING:
-- Use <p> tags for paragraphs
-- Lists (maximum 1-2 per article):
-  * Use <ul>/<li> for bullet lists when listing features, tips, or options
-  * Use <ol>/<li> for numbered lists when showing steps, rankings, or sequences
-  * Choose format based on context (bullets for unordered, numbers for ordered)
-  * 3-6 items per list maximum
-- Emojis: Use varied emojis based on context (not limited to ✅ ❌ 💡 ⚠️ 🎯 📊 💰)
-  * Choose emojis that match the specific topic and tone
-  * Examples: 🔥 💎 ⚡ 🌟 🎨 🛠️ 📈 🏆 💪 🎁 etc.
-- Comparison tables: Encouraged when comparing options, but not mandatory
-  * Use when it genuinely adds clarity and value
-  * Maximum 1 table per article (very rarely 2 if absolutely necessary)
-  * Don't force tables if comparison is simple
-
-EXTERNAL LINKS & MEDIA (OPTIONAL):
-- You MAY add 1-2 relevant external links if they add significant value
-- Authoritative sources: Wikipedia, official organizations, research studies, government sites
-- Social media embeds (when highly relevant):
-  * YouTube videos: Embed relevant tutorial/review videos using iframe
-  * Instagram posts: Link to popular posts related to the content
-  * X/Twitter: Link to relevant tweets if they provide valuable context/info
-- Use dofollow (no rel="nofollow")
-- Format: <a href="URL" target="_blank">anchor text</a>
-- Place where contextually relevant
-- YouTube embed example:
+OPTIONAL ENHANCEMENTS:
+- 1-2 external links (Wikipedia, official sources) if valuable
+- YouTube embed if highly relevant:
   <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;margin:20px 0;">
     <iframe style="position:absolute;top:0;left:0;width:100%;height:100%;" src="https://www.youtube.com/embed/VIDEO_ID" frameborder="0" allowfullscreen></iframe>
   </div>
-- Only include if you can find a genuinely relevant video/post
 
-COMPARISON TABLES (ENCOURAGED BUT NOT FORCED):
-When the article naturally compares 2+ distinct options/methods/products, a comparison table is highly valuable.
-Use tables when they add clarity, but don't force them if the comparison is simple or doesn't fit.
-Use this exact HTML structure with inline styles:
-
-<table style="width:100%; border-collapse:collapse; margin:20px 0;">
-  <thead>
-    <tr style="background:#f3f4f6;">
-      <th style="padding:12px; text-align:left; border:1px solid #ddd;">Critère</th>
-      <th style="padding:12px; text-align:left; border:1px solid #ddd;">Option 1</th>
-      <th style="padding:12px; text-align:left; border:1px solid #ddd;">Option 2</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td style="padding:10px; border:1px solid #ddd;"><strong>Prix</strong></td>
-      <td style="padding:10px; border:1px solid #ddd;">💰 $50-100</td>
-      <td style="padding:10px; border:1px solid #ddd;">💰💰 $200-500</td>
-    </tr>
-    <tr style="background:#fafafa;">
-      <td style="padding:10px; border:1px solid #ddd;"><strong>Qualité</strong></td>
-      <td style="padding:10px; border:1px solid #ddd;">⭐⭐⭐ Bonne</td>
-      <td style="padding:10px; border:1px solid #ddd;">⭐⭐⭐⭐⭐ Excellente</td>
-    </tr>
-    <tr>
-      <td style="padding:10px; border:1px solid #ddd;"><strong>Recommandé pour</strong></td>
-      <td style="padding:10px; border:1px solid #ddd;">✅ Débutants</td>
-      <td style="padding:10px; border:1px solid #ddd;">✅ Professionnels</td>
-    </tr>
-  </tbody>
-</table>
-
-Use varied emojis in cells based on context:
-- Common: ✅ (yes/good), ❌ (no/bad), ⭐ (rating), 💰 (price), 🎯 (recommended), ⚠️ (warning)
-- But also: 🔥 (popular), 💎 (premium), ⚡ (fast), 🌟 (best), 🎨 (design), 🛠️ (tools), 📈 (growth), etc.
-- Choose emojis that fit the specific comparison context
-Alternate row backgrounds with style="background:#fafafa;" for better readability.
-
-BANNED WORDS:
-"ultimate", "revolutionary", "game-changer", "unlock", "skyrocket", "boost", "leverage", "cutting-edge", "state-of-the-art", "world-class"
-
-BANNED CHARACTERS:
-"—" (em dash), "–" (en dash) - Use simple hyphen "-" or comma "," instead
-
-TONE & STYLE:
-- Professional but accessible
-- Speak TO the reader (use "you", "your")
-- Be helpful and informative
-- No marketing fluff or hype
-- Factual and trustworthy
+AVOID:
+- Words: "ultimate", "revolutionary", "game-changer", "unlock", "skyrocket", "leverage"
+- Characters: "—" "–" (use "-" or ",")
 
 ${linkInstructions}
 
-OUTPUT FORMAT:
-- Pure HTML in ${language}
-- Start directly with introduction paragraph (NO <h1> tag)
-- Then H2 sections with proper heading hierarchy (H2 → H3)
-- Ready to publish in Shopify
-- No markdown, no code blocks, no explanations
-
-Write the complete article now.`;
+OUTPUT: Pure HTML in ${language}. Start with intro paragraph. No markdown, no explanations.`;
 
     console.log("📝 [WRITE-ARTICLE] Prompt prepared. Length:", writingPrompt.length, "characters");
     console.log("🚀 [WRITE-ARTICLE] Calling Claude Sonnet 4.5...");
