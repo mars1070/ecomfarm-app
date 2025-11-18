@@ -18,6 +18,7 @@ const bottomNavigation = [
   { name: "Planification", href: "/planification", icon: Calendar },
   { name: "Outils", title: true },
   { name: "📝 To-Do List", href: "/todo", icon: CheckSquare },
+  { name: "📤 TXT vers CSV", href: "/import", icon: FileText },
   { name: "📚 Guide Complet", href: "/info", icon: Info },
   { name: "💰 Tarification", href: "/tarification", icon: DollarSign },
 ];
