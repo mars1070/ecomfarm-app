@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, ShoppingBag, Settings, DollarSign, Info, CheckSquare, Store, Calendar, RefreshCw, FolderOpen } from "lucide-react";
+import { FileText, ShoppingBag, Settings, DollarSign, Info, CheckSquare, Store, Calendar, RefreshCw, FolderOpen, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -16,6 +16,7 @@ const bottomNavigation = [
   { name: "Gestion", title: true },
   { name: "🏪 Mes Stores Shopify", href: "/shopify-stores", icon: Store },
   { name: "🔄 Sync Collections", href: "/sync-collections", icon: RefreshCw },
+  { name: "📋 Menus Navigation", href: "/menus", icon: Menu },
   { name: "Planification", href: "/planification", icon: Calendar },
   { name: "Outils", title: true },
   { name: "💰 Modification Prix", href: "/prix", icon: DollarSign },

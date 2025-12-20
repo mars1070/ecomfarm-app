@@ -483,11 +483,11 @@ export default function ShopifyStoresPage() {
               
               <div className="ml-9 bg-gray-900 rounded-lg p-4 relative">
                 <code className="text-green-400 text-xs font-mono block whitespace-pre-wrap break-all">
-                  read_customers,read_orders,read_product_listings,read_products,write_products,write_publications,read_content,write_content
+                  read_customers,read_orders,read_product_listings,read_products,write_products,write_publications,read_content,write_content,read_online_store_navigation,write_online_store_navigation
                 </code>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText('read_customers,read_orders,read_product_listings,read_products,write_products,write_publications,read_content,write_content');
+                    navigator.clipboard.writeText('read_customers,read_orders,read_product_listings,read_products,write_products,write_publications,read_content,write_content,read_online_store_navigation,write_online_store_navigation');
                     alert('✅ Scopes copiés !');
                   }}
                   className="absolute top-2 right-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
